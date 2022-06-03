@@ -3,6 +3,7 @@ library(sva)
 library(plotly)
 library(h2o)
 library(DESeq2)
+library(NOISeq)
 
 set.seed(100)
 

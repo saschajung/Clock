@@ -1239,13 +1239,13 @@ all(colnames(samples_new_df)[-1] == meta_comb_new$SampleID)
 meta_comb_new$Passage[is.na(meta_comb_new$Passage)] <- 1
 
 
-idx_wt <- which(colnames(samples_new_df) %in% meta_comb_new$SampleID[which(meta_comb_new$Gene == "NTg" & (meta_comb_new$Line_age > -1) & (! meta_comb_new$Line %in% excludedWTLines) & (meta_comb_new$Passage <= maxPassagingNumber))])
-wt_libs <- unique(meta_comb_new$LIB[meta_comb_new$SampleID %in% colnames(samples_new_df)[idx_wt]])
+#idx_wt <- which(colnames(samples_new_df) %in% meta_comb_new$SampleID[which(meta_comb_new$Gene == "NTg" & (meta_comb_new$Line_age > -1) & (! meta_comb_new$Line %in% excludedWTLines) & (meta_comb_new$Passage <= maxPassagingNumber))])
+#wt_libs <- unique(meta_comb_new$LIB[meta_comb_new$SampleID %in% colnames(samples_new_df)[idx_wt]])
 
 
 sort(unique(wt_libs))
 ##### TEST #####
-meta_comb_new <- meta_comb_new[meta_comb_new$LIB %in% F,]
+meta_comb_new <- meta_comb_new[meta_comb_new$LIB %in% c("LIBSRR122069"),]
 #meta_comb_new <- meta_comb_new[startsWith(meta_comb_new$SampleID,"C"),]
 samples_new_df <- samples_new_df[,c("Geneid",meta_comb_new$SampleID)]
 
