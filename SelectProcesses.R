@@ -1,6 +1,4 @@
-library(biomaRt)
 library(sva)
-library(plotly)
 library(h2o)
 library(DESeq2)
 
@@ -8,7 +6,7 @@ setwd("./.")
 
 set.seed(100)
 
-annot <- read.table("./SraRunTable.txt", sep = '\t', header = TRUE, stringsAsFactors = FALSE)
+annot <- read.table("./ProcessSelectionData/SraRunTable.txt", sep = '\t', header = TRUE, stringsAsFactors = FALSE)
 annot <- annot[,c("Run","age","Sex","ethnicity","disease")]
 annot <- annot[order(annot$Run),]
 colnames(annot) <- c("Sample","Age","Sex","Race","Disease")
@@ -41,56 +39,35 @@ annot$Sex[which(annot$Sex == "Male" | annot$Sex == "male")] <- "M"
 annot$Race[which(annot$Race == "caucasian")] <- "Caucasian"
 annot$Race[which(annot$Race == "CaucasianSardinian")] <- "Caucasian"
 
-data <- read.table("./featurecounts.Rmatrix.txt", sep = '\t', header = TRUE, stringsAsFactors = FALSE)
+data <- read.table("./ProcessSelectionData/featurecounts.Rmatrix.txt", sep = '\t', header = TRUE, stringsAsFactors = FALSE)
 data <- data[,c(1,order(colnames(data)[-1])+1)]
 data <- data[order(data$Geneid),]
 data$Geneid <- gsub("\\.[0-9]+","",data$Geneid)
 
-ensembl<-  useMart("ensembl", dataset="hsapiens_gene_ensembl")
-
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = data$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
+ensTolen_agg <- readRDS("./EnsemblIdToMedianTranscriptLength_Sep2025.rds")
 
 data <- data[data$Geneid %in% ensTolen_agg$Group.1,]
-all(data$Geneid == ensTolen_agg$Group.1)
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 
-rapa <- read.table("./LIB049469_featurecounts.Rmatrix.txt",header = TRUE)
+rapa <- read.table("./ProcessSelectionData/LIB049469_featurecounts.Rmatrix.txt",header = TRUE)
 
 rapa$Geneid <- gsub("\\.[0-9]+","",rapa$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = rapa$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
-
 rapa <- rapa[rapa$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 
 rapa <- rapa[order(rapa$Geneid),]
-all(rapa$Geneid == ensTolen_agg$Group.1)
 
-iso <- read.table("./LIB050518_featurecounts.Rmatrix.txt",header = TRUE)
+iso <- read.table("./ProcessSelectionData/LIB050518_featurecounts.Rmatrix.txt",header = TRUE)
 
 iso$Geneid <- gsub("\\.[0-9]+","",iso$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = iso$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
-
 iso <- iso[iso$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 
 iso <- iso[order(iso$Geneid),]
-all(iso$Geneid == ensTolen_agg$Group.1)
 
-ipsc <- read.table("./LIB047784_featurecounts.Rmatrix.txt",header = TRUE)
-
+ipsc <- read.table("./ProcessSelectionData/LIB047784_featurecounts.Rmatrix.txt",header = TRUE)
 ipsc$Geneid <- gsub("\\.[0-9]+","",ipsc$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = ipsc$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
-
 ipsc <- ipsc[ipsc$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 
 ipsc <- ipsc[order(ipsc$Geneid),]
 ipsc <- ipsc[,c(1,6:9)]
-all(ipsc$Geneid == ensTolen_agg$Group.1)
 
 data_all_merged <- merge(data,rapa, by = "Geneid")
 data_all_merged <- merge(data_all_merged,iso, by = "Geneid")
@@ -122,16 +99,14 @@ inp_comp <- inp_comp[,tokeep]
 
 #### Read MBotC ontology data and prepare groups ####
 
-mbotc <- read.table("./gene-SCPassociations.txt", header = T, sep = "\t", stringsAsFactors = F, comment.char = "", quote = "")
+mbotc <- read.table("./Data/gene-SCPassociations.txt", header = T, sep = "\t", stringsAsFactors = F, comment.char = "", quote = "")
 
 all_procs <- setdiff(unique(mbotc$ProcessName),"Background genes")
 
 genes_to_procs <- lapply(all_procs,function(x){unique(mbotc$Symbol[mbotc$ProcessName == x])})
 names(genes_to_procs) <- all_procs
 
-ensembl<-  useMart("ensembl", dataset="hsapiens_gene_ensembl")
-
-symbToEns <- getBM(attributes=c("ensembl_gene_id", "hgnc_symbol"), filters = "hgnc_symbol", values = unique(mbotc$Symbol), mart= ensembl)
+symbToEns <- readRDS("./EnsemblIdToSymbol_Sep2025.rds")
 
 ensembl_to_procs <- lapply(genes_to_procs,function(x){intersect(colnames(inp_comp),unique(symbToEns$ensembl_gene_id[symbToEns$hgnc_symbol %in% x]))})
 ensembl_to_procs <- ensembl_to_procs[unname(which(sapply(ensembl_to_procs,length) >= 3))]
@@ -140,7 +115,6 @@ level_to_procs <- sapply(names(ensembl_to_procs),function(x){unique(mbotc$Proces
 
 levels_to_consider <- c(3)
 
-f <- function(age){if(age<=20){log(age+1)-log(21)}else if(age>=80){log(exp(20/7)+(age-80)/80)}else{(age-20)/(21)}}
 f1 <- function(age){-log(1/age-1/101)-log(25)}
 h <- function(age){if(age<=70){(f1(71)-f1(70))*(age-70)}else{3*(f1(71)-f1(70))*(age-70)}}
 inp_comp$Age_scaled <- sapply(inp_comp$Age,h)

@@ -1,7 +1,9 @@
-library(biomaRt)
 library(plyr)
 library(stringr)
 setwd("./")
+
+ensTolen_agg <- readRDS("./EnsemblIdToMedianTranscriptLength_Sep2025.rds")
+
 #### Read and process training data ####
 #Read data
 train_data <- read.table("./Data/Fleischer_featurecounts.Rmatrix.txt", sep = '\t', header = TRUE, stringsAsFactors = FALSE)
@@ -11,12 +13,7 @@ train_data <- train_data[order(train_data$Geneid),]
 
 #Cleanup GeneId
 train_data$Geneid <- gsub("\\.[0-9]+","",train_data$Geneid)
-ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = train_data$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 train_data <- train_data[train_data$Geneid %in% ensTolen_agg$Group.1,]
-all(train_data$Geneid == ensTolen_agg$Group.1)
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 
 #Add and process metadata
 train_metadata <- read.table("./Data/Fleischer_metadata.txt", sep = ',', header = TRUE, stringsAsFactors = FALSE)
@@ -49,21 +46,6 @@ train_metadata$Sex[which(train_metadata$Sex == "Male" | train_metadata$Sex == "m
 train_metadata$Race[which(train_metadata$Race == "caucasian")] <- "Caucasian"
 train_metadata$Race[which(train_metadata$Race == "CaucasianSardinian")] <- "Caucasian"
 
-hgps_meta <- data.frame(SampleID = train_metadata$Sample[train_metadata$Disease == "HGPS"],
-                             GeneID = 0,
-                             Replicate = 1,
-                             Gene = "HGPS",
-                             gene_symbol = "HGPS",
-                             Line = "Fibroblast",
-                             Passage = -1,
-                             Line_age = train_metadata$Age_Y[train_metadata$Disease == "HGPS"],
-                             Dox = 0,
-                             LIB = "Fleischer",
-                             Comment = ""
-)
-
-hgps <- train_data[,c("Geneid",hgps_meta$SampleID)]
-
 fleischer_meta <- data.frame(SampleID = train_metadata$Sample[which(train_metadata$Disease == "Normal")],
                              GeneID = 0,
                              Replicate = 1,
@@ -82,26 +64,24 @@ fleischer_data <- train_data[,c("Geneid",fleischer_meta$SampleID)]
 
 #### Read ASL data ####
 #Read data
-ASL_20M <- read.table("./Data/all_data_featurecounts(1).txt",header = T)#read.table("./Data/20M_full_featurecounts.txt",header = TRUE)
+ASL_20M <- read.table("./Data/all_data_featurecounts(1).txt",header = T)
 gl <- ASL_20M[,c("Geneid","Length")]
 gl$Geneid <- gsub("\\.[0-9]+","",gl$Geneid)
 tmp <- gl$Length
 names(tmp) <- gl$Geneid
 gl <- tmp
+saveRDS(gl,"./GeneLengths.rds")
 rm(tmp)
-ASL_meta <- read.csv("./Data/all_metadata.csv",header = TRUE)#read.csv("./Data/ASL_metadata_full.csv",header = TRUE)
+ASL_meta <- read.csv("./Data/all_metadata.csv",header = TRUE)
 ASL_meta <- ASL_meta[!is.na(ASL_meta$Line_age),]
 ASL_meta$Gene[grepl("iPS",ASL_meta$Comment) & (ASL_meta$Gene == "NTg")] <- "NTg_iPS"
 ASL_20M <- ASL_20M[,c("Geneid",ASL_meta$SampleID)]
 
 #Cleanup GeneId
 ASL_20M$Geneid <- gsub("\\.[0-9]+","",ASL_20M$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = ASL_20M$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
+ensTolen_agg <- readRDS("./EnsemblIdToMedianTranscriptLength_Sep2025.rds")
 ASL_20M <- ASL_20M[ASL_20M$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 ASL_20M <- ASL_20M[order(ASL_20M$Geneid),]
-all(ASL_20M$Geneid == ensTolen_agg$Group.1)
 
 #Read additional fibro data
 #SRR303074 (MRC5 cell line/ 14 weeks foetus, mRNA)
@@ -113,12 +93,8 @@ SRR303074_meta <- read.table("./Data/1_SraRunTable.txt", header = T, sep = ",")
 SRR303074[ ,2:6] <- list(NULL)
 colnames(SRR303074)[-1] <- str_extract(colnames(SRR303074)[-1],"SRR[0-9]+")
 SRR303074$Geneid <- gsub("\\.[0-9]+","",SRR303074$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR303074$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR303074 <- SRR303074[SRR303074$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR303074 <- SRR303074[order(SRR303074$Geneid),]
-all(SRR303074$Geneid == ensTolen_agg$Group.1)
 
 SRR303074_meta <- SRR303074_meta[,c("Run","Cell_Line","cell_state","source_name")]
 SRR303074_meta <- ddply(SRR303074_meta,c("cell_state"),transform,Replicate=seq(from=1,by=1,length.out=length(cell_state)))
@@ -150,12 +126,8 @@ SRR121037_meta <- read.table("./Data/2_SraRunTable.txt", header = T, sep = ",")
 SRR121037[ ,2:6] <- list(NULL)
 colnames(SRR121037)[-1] <- str_extract(colnames(SRR121037)[-1],"SRR[0-9]+")
 SRR121037$Geneid <- gsub("\\.[0-9]+","",SRR121037$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR121037$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR121037 <- SRR121037[SRR121037$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR121037 <- SRR121037[order(SRR121037$Geneid),]
-all(SRR121037$Geneid == ensTolen_agg$Group.1)
 
 SRR121037_meta <- SRR121037_meta[,c("Run","Cell_type","source_name","develpmental_stage","treatment")]
 SRR121037_meta <- ddply(SRR121037_meta,c("develpmental_stage","treatment"),transform,Replicate=seq(from=1,by=1,length.out=length(develpmental_stage)))
@@ -189,12 +161,8 @@ SRR315202_meta <- read.table("./Data/4_SraRunTable.txt", header = T, sep = ",")
 SRR315202[ ,2:6] <- list(NULL)
 colnames(SRR315202)[-1] <- str_extract(colnames(SRR315202)[-1],"SRR[0-9]+")
 SRR315202$Geneid <- gsub("\\.[0-9]+","",SRR315202$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR315202$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR315202 <- SRR315202[SRR315202$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR315202 <- SRR315202[order(SRR315202$Geneid),]
-all(SRR315202$Geneid == ensTolen_agg$Group.1)
 
 SRR315202_meta <- SRR315202_meta[,c("Run","agent","Cell_Line","population_doublings")]
 SRR315202_meta <- ddply(SRR315202_meta,c("Cell_Line","population_doublings"),transform,Replicate=seq(from=1,by=1,length.out=length(population_doublings)))
@@ -228,12 +196,8 @@ SRR275112_meta <- read.table("./Data/5_SraRunTable.txt", header = T, sep = ",")
 SRR275112[ ,2:6] <- list(NULL)
 colnames(SRR275112)[-1] <- str_extract(colnames(SRR275112)[-1],"SRR[0-9]+")
 SRR275112$Geneid <- gsub("\\.[0-9]+","",SRR275112$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR275112$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR275112 <- SRR275112[SRR275112$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR275112 <- SRR275112[order(SRR275112$Geneid),]
-all(SRR275112$Geneid == ensTolen_agg$Group.1)
 
 SRR275112_meta <- SRR275112_meta[,c("Run","Cell_type","age_category","population_doublings")]
 SRR275112_meta$age_category[SRR275112_meta$age_category == "-"] <- ""
@@ -271,12 +235,8 @@ ERR137716_meta <- read.table("./Data/6_SraRunTable.txt", header = T, sep = ",")
 ERR137716[ ,2:6] <- list(NULL)
 colnames(ERR137716)[-1] <- str_extract(colnames(ERR137716)[-1],"ERR[0-9]+")
 ERR137716$Geneid <- gsub("\\.[0-9]+","",ERR137716$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = ERR137716$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 ERR137716 <- ERR137716[ERR137716$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 ERR137716 <- ERR137716[order(ERR137716$Geneid),]
-all(ERR137716$Geneid == ensTolen_agg$Group.1)
 
 ERR137716_meta <- ERR137716_meta[,c("Run","Age","Cell_type","sampling_site","sex","stimulus")]
 ERR137716_meta$stimulus[ERR137716_meta$stimulus == "UV exposed"] <- "UV"
@@ -313,12 +273,8 @@ SRR101478_meta <- read.table("./Data/8_SraRunTable.txt", header = T, sep = ",")
 SRR101478[ ,2:6] <- list(NULL)
 colnames(SRR101478)[-1] <- str_extract(colnames(SRR101478)[-1],"SRR[0-9]+")
 SRR101478$Geneid <- gsub("\\.[0-9]+","",SRR101478$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR101478$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR101478 <- SRR101478[SRR101478$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR101478 <- SRR101478[order(SRR101478$Geneid),]
-all(SRR101478$Geneid == ensTolen_agg$Group.1)
 
 SRR101478_meta <- SRR101478_meta[,c("Run","tissue","time_point")]
 SRR101478_meta$time_point[SRR101478_meta$time_point == "early timepoint (E)"] <- "EarlyTime"
@@ -355,12 +311,8 @@ SRR173636_meta <- read.table("./Data/9_SraRunTable.txt", header = T, sep = ",")
 SRR173636[ ,2:6] <- list(NULL)
 colnames(SRR173636)[-1] <- str_extract(colnames(SRR173636)[-1],"SRR[0-9]+")
 SRR173636$Geneid <- gsub("\\.[0-9]+","",SRR173636$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR173636$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR173636 <- SRR173636[SRR173636$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR173636 <- SRR173636[order(SRR173636$Geneid),]
-all(SRR173636$Geneid == ensTolen_agg$Group.1)
 
 SRR173636_meta <- SRR173636_meta[,c("Run","Cell_Line","treatment","population_doublings")]
 SRR173636_meta$treatment[SRR173636_meta$treatment == "100 nM rotenone"] <- "rotenone"
@@ -398,12 +350,8 @@ SRR176804_meta <- read.table("./Data/10_SraRunTable.txt", header = T, sep = ",")
 SRR176804[ ,2:6] <- list(NULL)
 colnames(SRR176804)[-1] <- str_extract(colnames(SRR176804)[-1],"SRR[0-9]+")
 SRR176804$Geneid <- gsub("\\.[0-9]+","",SRR176804$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR176804$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR176804 <- SRR176804[SRR176804$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR176804 <- SRR176804[order(SRR176804$Geneid),]
-all(SRR176804$Geneid == ensTolen_agg$Group.1)
 
 SRR176804_meta <- SRR176804_meta[,c("Run","Cell_type","source")]
 SRR176804_meta$Cell_type[SRR176804_meta$Cell_type == "proliferative fibroblast"] <- "prolif"
@@ -442,12 +390,8 @@ SRR627541_meta <- read.table("./Data/12_SraRunTable.txt", header = T, sep = ",")
 SRR627541[ ,2:6] <- list(NULL)
 colnames(SRR627541)[-1] <- str_extract(colnames(SRR627541)[-1],"SRR[0-9]+")
 SRR627541$Geneid <- gsub("\\.[0-9]+","",SRR627541$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR627541$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR627541 <- SRR627541[SRR627541$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR627541 <- SRR627541[order(SRR627541$Geneid),]
-all(SRR627541$Geneid == ensTolen_agg$Group.1)
 
 SRR627541_meta <- SRR627541_meta[SRR627541_meta$LibrarySelection == "cDNA",c("Run","Cell_Line","Condition")]
 SRR627541_meta$Cell_Line <- "BJ"
@@ -487,12 +431,8 @@ SRR810099_meta <- read.table("./Data/13_SraRunTable.txt", header = T, sep = ",")
 SRR810099[ ,2:6] <- list(NULL)
 colnames(SRR810099)[-1] <- str_extract(colnames(SRR810099)[-1],"SRR[0-9]+")
 SRR810099$Geneid <- gsub("\\.[0-9]+","",SRR810099$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR810099$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR810099 <- SRR810099[SRR810099$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR810099 <- SRR810099[order(SRR810099$Geneid),]
-all(SRR810099$Geneid == ensTolen_agg$Group.1)
 
 SRR810099_meta <- SRR810099_meta[SRR810099_meta$LibrarySelection == "cDNA",c("Run","Cell_Line","Condition")]
 SRR810099_meta$Cell_Line <- "BJ"
@@ -538,12 +478,8 @@ SRR700080_meta <- read.table("./Data/14_SraRunTable.txt", header = T, sep = ",")
 SRR700080[ ,2:6] <- list(NULL)
 colnames(SRR700080)[-1] <- str_extract(colnames(SRR700080)[-1],"SRR[0-9]+")
 SRR700080$Geneid <- gsub("\\.[0-9]+","",SRR700080$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR700080$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR700080 <- SRR700080[SRR700080$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR700080 <- SRR700080[order(SRR700080$Geneid),]
-all(SRR700080$Geneid == ensTolen_agg$Group.1)
 
 SRR700080_meta <- SRR700080_meta[,c("Run","Passage","source_name","treatment")]
 SRR700080_meta$Passage[SRR700080_meta$Passage == "P17-P20"] <- "17"
@@ -588,12 +524,8 @@ SRR178756_meta <- read.table("./Data/15_SraRunTable.txt", header = T, sep = ",")
 SRR178756[ ,2:6] <- list(NULL)
 colnames(SRR178756)[-1] <- str_extract(colnames(SRR178756)[-1],"SRR[0-9]+")
 SRR178756$Geneid <- gsub("\\.[0-9]+","",SRR178756$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR178756$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR178756 <- SRR178756[SRR178756$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR178756 <- SRR178756[order(SRR178756$Geneid),]
-all(SRR178756$Geneid == ensTolen_agg$Group.1)
 
 SRR178756_meta <- SRR178756_meta[,c("Run","agent","Cell_Line","Genotype","Passages")]
 SRR178756_meta$Passages[SRR178756_meta$Passages == "15-20"] <- "15"
@@ -630,12 +562,8 @@ SRR942655_meta <- read.table("./Data/17_SraRunTable.txt", header = T, sep = ",")
 SRR942655[ ,2:6] <- list(NULL)
 colnames(SRR942655)[-1] <- str_extract(colnames(SRR942655)[-1],"SRR[0-9]+")
 SRR942655$Geneid <- gsub("\\.[0-9]+","",SRR942655$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR942655$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR942655 <- SRR942655[SRR942655$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR942655 <- SRR942655[order(SRR942655$Geneid),]
-all(SRR942655$Geneid == ensTolen_agg$Group.1)
 
 SRR942655_meta <- SRR942655_meta[,c("Run","source_name","Passage","Donor","Cell_type")]
 SRR942655_meta$Passage[SRR942655_meta$Passage == "between 4 and 7"] <- "4"
@@ -681,12 +609,8 @@ ERR260891_meta <- read.table("./Data/18_SraRunTable.txt", header = T, sep = ",")
 ERR260891[ ,2:6] <- list(NULL)
 colnames(ERR260891)[-1] <- str_extract(colnames(ERR260891)[-1],"ERR[0-9]+")
 ERR260891$Geneid <- gsub("\\.[0-9]+","",ERR260891$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = ERR260891$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 ERR260891 <- ERR260891[ERR260891$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 ERR260891 <- ERR260891[order(ERR260891$Geneid),]
-all(ERR260891$Geneid == ensTolen_agg$Group.1)
 
 ERR260891_meta <- ERR260891_meta[,c("Run","sample_name")]
 
@@ -733,12 +657,8 @@ SRR539844_meta <- read.table("./Data/20_SraRunTable.txt", header = T, sep = ",")
 SRR539844[ ,2:6] <- list(NULL)
 colnames(SRR539844)[-1] <- str_extract(colnames(SRR539844)[-1],"SRR[0-9]+")
 SRR539844$Geneid <- gsub("\\.[0-9]+","",SRR539844$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR539844$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR539844 <- SRR539844[SRR539844$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR539844 <- SRR539844[order(SRR539844$Geneid),]
-all(SRR539844$Geneid == ensTolen_agg$Group.1)
 
 SRR539844_meta <- SRR539844_meta[,c("Run","Age","Cell_type","gender","tissue")]
 
@@ -780,12 +700,8 @@ SRR357505_meta <- read.table("./Data/21_SraRunTable.txt", header = T, sep = ",")
 SRR357505[ ,2:6] <- list(NULL)
 colnames(SRR357505)[-1] <- str_extract(colnames(SRR357505)[-1],"SRR[0-9]+")
 SRR357505$Geneid <- gsub("\\.[0-9]+","",SRR357505$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR357505$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR357505 <- SRR357505[SRR357505$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR357505 <- SRR357505[order(SRR357505$Geneid),]
-all(SRR357505$Geneid == ensTolen_agg$Group.1)
 
 SRR357505_meta <- SRR357505_meta[,c("Run","Assay.Type","Cell_type","source_name","treatment")]
 SRR357505_meta <- SRR357505_meta[SRR357505_meta$Assay.Type == "RNA-Seq",]
@@ -819,73 +735,6 @@ SRR357505 <- SRR357505[,c("Geneid",commonsamps)]
 
 all(SRR357505_meta$Sample == colnames(SRR357505)[-1])
 
-#SRR203849 (mixed/ mRNA) EXCLUDE!!!! PLUS AND MINUS STRAND SEPERATED
-SRR203849 <- read.table("./Data/22_SRR203849_featurecounts.txt", header = T, sep = "\t")
-SRR203849_meta <- read.table("./Data/22_SraRunTable.txt", header = T, sep = ",")
-
-SRR203849[ ,2:6] <- list(NULL)
-colnames(SRR203849)[-1] <- str_extract(colnames(SRR203849)[-1],"SRR[0-9]+")
-SRR203849$Geneid <- gsub("\\.[0-9]+","",SRR203849$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR203849$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
-SRR203849 <- SRR203849[SRR203849$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
-SRR203849 <- SRR203849[order(SRR203849$Geneid),]
-all(SRR203849$Geneid == ensTolen_agg$Group.1)
-
-SRR203849_meta <- SRR203849_meta[,c("Run","source_name","treatment","Cell_Line")]
-
-SRR203849_meta$source_name[SRR203849_meta$source_name == "reference hESC line"] <- "ESC"
-SRR203849_meta$source_name[SRR203849_meta$source_name == "reference hIPSC line"] <- "iPS"
-SRR203849_meta$source_name[SRR203849_meta$source_name == "reprogramming intermediates of hiF-T cells"] <- "reprogInt_hiF-T_cells"
-SRR203849_meta$source_name[SRR203849_meta$source_name == "human inducible fibroblasts-like cells (hiF)"] <- "hiF"
-SRR203849_meta$source_name[SRR203849_meta$source_name == "immortalized human inducible fibroblasts-like cells (hiF-T)"] <- "hiF-T"
-SRR203849_meta$source_name[SRR203849_meta$source_name == "reprogramming intermediates of hiF cells"] <- "reprogInt_hiF_cells"
-SRR203849_meta$source_name[SRR203849_meta$source_name == "hIPSCs from reprogrammed hiF cells (hIPSC)"] <- "hiF-iPS"
-SRR203849_meta$source_name[SRR203849_meta$source_name == "hIPSCs from reprogrammed hiF-T cells (hIPSC-T)"] <- "hiF-T-iPS"
-
-SRR203849_meta$AgeNum <- 0
-SRR203849_meta$AgeNum[!SRR203849_meta$source_name %in% c("ESC","iPS","BJ")] <- -1
-
-SRR203849_meta$treatment[SRR203849_meta$treatment == "no DOX"] <- "none"
-SRR203849_meta$treatment[SRR203849_meta$treatment == "DOX days 0-2"] <- "DOX"
-SRR203849_meta$treatment[SRR203849_meta$treatment == "DOX days 0-5"] <- "DOX"
-SRR203849_meta$treatment[SRR203849_meta$treatment == "DOX days 0-8"] <- "DOX"
-SRR203849_meta$treatment[SRR203849_meta$treatment == "DOX days 0-10"] <- "DOX"
-SRR203849_meta$treatment[SRR203849_meta$treatment == "DOX days 0-14"] <- "DOX"
-SRR203849_meta$treatment[SRR203849_meta$treatment == "DOX days 0-20"] <- "DOX"
-SRR203849_meta$treatment[SRR203849_meta$treatment == "DOX days 0-24"] <- "DOX"
-SRR203849_meta$treatment[SRR203849_meta$treatment == "DOX days 0-19"] <- "DOX"
-SRR203849_meta$treatment[SRR203849_meta$treatment == "DOX days 0-5; LSD1 inhibition"] <- "DOX;LSD1_inhib"
-SRR203849_meta$treatment[SRR203849_meta$treatment == "DOX days 0-5; LSD1 control"] <- "DOX;LSD1_control"
-SRR203849_meta$treatment[SRR203849_meta$treatment == "DOX days 0-13; LSD1 inhibition"] <- "DOX;LSD1_inhib"
-SRR203849_meta$treatment[SRR203849_meta$treatment == "DOX days 0-13; LSD1 control"] <- "DOX;LSD1_control"
-SRR203849_meta$treatment[SRR203849_meta$treatment == ""] <- "none"
-
-SRR203849_meta$Gene <- paste0("NTg_",SRR203849_meta$treatment)
-SRR203849_meta$Gene[SRR203849_meta$Gene == "NTg_none"] <- "NTg"
-
-SRR203849_meta <- ddply(SRR203849_meta,c("source_name","treatment"),transform,Replicate=seq(from=1,by=1,length.out=length(treatment)))
-
-SRR203849_meta <- data.frame(SampleID = SRR203849_meta$Run,
-                             GeneID = 0,
-                             Replicate = SRR203849_meta$Replicate,
-                             Gene = SRR203849_meta$Gene,
-                             gene_symbol = "NTg",
-                             Line = SRR203849_meta$source_name,
-                             Passage = -1,
-                             Line_age = SRR203849_meta$AgeNum,
-                             Dox = 0,
-                             LIB = "LIBSRR203849",
-                             Comment = SRR203849_meta$treatment
-)
-
-commonsamps <- intersect(SRR203849_meta$Sample,colnames(SRR203849))
-SRR203849_meta <- SRR203849_meta[SRR203849_meta$Sample %in% commonsamps,]
-SRR203849 <- SRR203849[,c("Geneid",commonsamps)]
-
-all(SRR203849_meta$Sample == colnames(SRR203849)[-1])
-
 #SRR180214 (mixed/ total RNA)
 SRR180214 <- read.table("./Data/23_SRR180214_featurecounts.txt", header = T, sep = "\t")
 SRR180214_meta <- read.table("./Data/23_SraRunTable.txt", header = T, sep = ",")
@@ -893,12 +742,8 @@ SRR180214_meta <- read.table("./Data/23_SraRunTable.txt", header = T, sep = ",")
 SRR180214[ ,2:6] <- list(NULL)
 colnames(SRR180214)[-1] <- str_extract(colnames(SRR180214)[-1],"SRR[0-9]+")
 SRR180214$Geneid <- gsub("\\.[0-9]+","",SRR180214$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR180214$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR180214 <- SRR180214[SRR180214$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR180214 <- SRR180214[order(SRR180214$Geneid),]
-all(SRR180214$Geneid == ensTolen_agg$Group.1)
 
 SRR180214_meta <- SRR180214_meta[,c("Run","Assay.Type","Cell_type")]
 SRR180214_meta <- SRR180214_meta[SRR180214_meta$Assay.Type == "RNA-Seq",]
@@ -930,50 +775,6 @@ SRR180214 <- SRR180214[,c("Geneid",commonsamps)]
 
 all(SRR180214_meta$Sample == colnames(SRR180214)[-1])
 
-#SRR519079 (mixed/ mRNA) #Exclude samples from mixed library
-SRR519079 <- read.table("./Data/24_SRR519079_featurecounts.txt", header = T, sep = "\t")
-SRR519079_meta <- read.table("./Data/24_SraRunTable.txt", header = T, sep = ",")
-
-SRR519079[ ,2:6] <- list(NULL)
-colnames(SRR519079)[-1] <- str_extract(colnames(SRR519079)[-1],"SRR[0-9]+")
-SRR519079$Geneid <- gsub("\\.[0-9]+","",SRR519079$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR519079$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
-SRR519079 <- SRR519079[SRR519079$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
-SRR519079 <- SRR519079[order(SRR519079$Geneid),]
-all(SRR519079$Geneid == ensTolen_agg$Group.1)
-
-SRR519079_meta <- SRR519079_meta[,c("Run","age_group","sex","source_name","treatment","PATIENT_ID")]
-
-SRR519079_meta$Cell_type <- "Skin"
-
-SRR519079_meta$AgeNum <- -1
-
-SRR519079_meta$Gene <- paste0("NTg_",SRR519079_meta$treatment)
-SRR519079_meta$Gene[SRR519079_meta$Gene %in% c("NTg_none","NTg_")] <- "NTg"
-
-SRR519079_meta <- ddply(SRR519079_meta,c("source_name"),transform,Replicate=seq(from=1,by=1,length.out=length(source_name)))
-
-SRR519079_meta <- data.frame(SampleID = SRR519079_meta$Run,
-                             GeneID = 0,
-                             Replicate = SRR519079_meta$Replicate,
-                             Gene = SRR519079_meta$Gene,
-                             gene_symbol = "NTg",
-                             Line = SRR519079_meta$Cell_type,
-                             Passage = -1,
-                             Line_age = -1,
-                             Dox = 0,
-                             LIB = "LIBSRR519079",
-                             Comment = SRR519079_meta$source_name
-)
-
-commonsamps <- intersect(SRR519079_meta$Sample,colnames(SRR519079))
-SRR519079_meta <- SRR519079_meta[SRR519079_meta$Sample %in% commonsamps,]
-SRR519079 <- SRR519079[,c("Geneid",commonsamps)]
-
-all(SRR519079_meta$Sample == colnames(SRR519079)[-1])
-
 #SRR150962 (Interventions/ total RNA)
 SRR150962 <- read.table("./Data/3_SRR150962_featurecounts.txt", header = T, sep = "\t")
 SRR150962_meta <- read.table("./Data/3_SRR150962_RunTable.txt", header = T, sep = ",")
@@ -981,12 +782,8 @@ SRR150962_meta <- read.table("./Data/3_SRR150962_RunTable.txt", header = T, sep 
 SRR150962[ ,2:6] <- list(NULL)
 colnames(SRR150962)[-1] <- str_extract(colnames(SRR150962)[-1],"SRR[0-9]+")
 SRR150962$Geneid <- gsub("\\.[0-9]+","",SRR150962$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR150962$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR150962 <- SRR150962[SRR150962$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR150962 <- SRR150962[order(SRR150962$Geneid),]
-all(SRR150962$Geneid == ensTolen_agg$Group.1)
 
 SRR150962_meta <- SRR150962_meta[,c("Run","DONOR_AGE","Cell_Line","clinical_condition","percent_oxygen","replicate_line","inhouse_cell_line_name","Passage","treatments")]
 SRR150962_meta$clinical_condition[SRR150962_meta$clinical_condition == "Normal"] <- "NTg"
@@ -1022,12 +819,8 @@ ERR270009_meta <- read.table("./Data/7_ERR270009_Run_Table_complete.txt", header
 ERR270009[ ,2:6] <- list(NULL)
 colnames(ERR270009)[-1] <- str_extract(colnames(ERR270009)[-1],"ERR[0-9]+")
 ERR270009$Geneid <- gsub("\\.[0-9]+","",ERR270009$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = ERR270009$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 ERR270009 <- ERR270009[ERR270009$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 ERR270009 <- ERR270009[order(ERR270009$Geneid),]
-all(ERR270009$Geneid == ensTolen_agg$Group.1)
 
 library(plyr)
 ERR270009_meta <- ERR270009_meta[,c("Comment.ENA_RUN.","Characteristics.individual.","Characteristics.age.","Factor.Value.compound.","Factor.Value.sampling.time.point.")]
@@ -1065,12 +858,8 @@ SRR108366_meta <- read.table("./Data/19_SRR108366_RunTable.txt", header = T, sep
 SRR108366[ ,2:6] <- list(NULL)
 colnames(SRR108366)[-1] <- str_extract(colnames(SRR108366)[-1],"SRR[0-9]+")
 SRR108366$Geneid <- gsub("\\.[0-9]+","",SRR108366$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR108366$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR108366 <- SRR108366[SRR108366$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR108366 <- SRR108366[order(SRR108366$Geneid),]
-all(SRR108366$Geneid == ensTolen_agg$Group.1)
 
 SRR108366_meta <- SRR108366_meta[,c("Run","Library.Name","Age","tissue")]
 SRR108366_meta$Library.Name <- gsub("[0-9]","",SRR108366_meta$Library.Name)
@@ -1105,12 +894,8 @@ SRR309684_meta <- read.table("./Data/26_SraRunTable.txt", header = T, sep = ",")
 SRR309684[ ,2:6] <- list(NULL)
 colnames(SRR309684)[-1] <- str_extract(colnames(SRR309684)[-1],"SRR[0-9]+")
 SRR309684$Geneid <- gsub("\\.[0-9]+","",SRR309684$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR309684$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR309684 <- SRR309684[SRR309684$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR309684 <- SRR309684[order(SRR309684$Geneid),]
-all(SRR309684$Geneid == ensTolen_agg$Group.1)
 
 SRR309684_meta <- SRR309684_meta[,c("Run","disease","Age","cell_subtype","pmi")]
 SRR309684_meta <- ddply(SRR309684_meta,c("Age","disease","cell_subtype","pmi"),transform,Replicate=seq(from=1,by=1,length.out=length(pmi)))
@@ -1143,12 +928,8 @@ SRR122069_meta <- read.table("./Data/27_SraRunTable.txt", header = T, sep = ",")
 SRR122069[ ,2:6] <- list(NULL)
 colnames(SRR122069)[-1] <- str_extract(colnames(SRR122069)[-1],"SRR[0-9]+")
 SRR122069$Geneid <- gsub("\\.[0-9]+","",SRR122069$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = SRR122069$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 SRR122069 <- SRR122069[SRR122069$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 SRR122069 <- SRR122069[order(SRR122069$Geneid),]
-all(SRR122069$Geneid == ensTolen_agg$Group.1)
 
 SRR122069_meta <- SRR122069_meta[SRR122069_meta$Assay.Type == "RNA-Seq",c("Run","Cell_type","source_name")]
 SRR122069_meta$Annot <- c("D0",
@@ -1193,18 +974,11 @@ all(SRR122069_meta$Sample == colnames(SRR122069)[-1])
 #LIB057494
 LIB057494 <- read.table("./Data/LIB057494_featurecounts.txt", header = T, sep = "\t")
 colnames(LIB057494)[-1] <- paste0("LIB057494.",colnames(LIB057494)[-1])
-LIB057494_meta <- read.table("~/Documents/LIB057494_metadata.txt", header = T, sep = "\t")
-#gene_length <- LIB057494$Length
-#names(gene_length) <- gsub("\\.[0-9]+","",LIB057494$Geneid)
-#SRR303074_meta <- read.table("./Data/1_SraRunTable.txt", header = T, sep = ",")
+LIB057494_meta <- read.table("./Data/LIB057494_metadata.txt", header = T, sep = "\t")
 
 LIB057494$Geneid <- gsub("\\.[0-9]+","",LIB057494$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = LIB057494$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
 LIB057494 <- LIB057494[LIB057494$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
 LIB057494 <- LIB057494[order(LIB057494$Geneid),]
-all(LIB057494$Geneid == ensTolen_agg$Group.1)
 
 LIB057494_meta <- data.frame(SampleID = paste0("LIB057494.",LIB057494_meta$X),
                              GeneID = 0,
@@ -1227,47 +1001,6 @@ LIB057494 <- LIB057494[,c("Geneid",commonsamps)]
 
 all(LIB057494_meta$Sample == colnames(LIB057494)[-1])
 
-#LIBNEWOSKM
-LIBNEWOSKM <- read.table("./Data/merged_featureCounts_genename.txt", header = T, sep = "\t")
-LIBNEWOSKM <- LIBNEWOSKM[,-c(2:6)]
-LIBNEWOSKM$Geneid <- unname(sapply(LIBNEWOSKM$Geneid,function(x){strsplit(x,"_")[[1]][1]}))
-colnames(LIBNEWOSKM)[-1] <- unname(sapply(colnames(LIBNEWOSKM)[-1],function(x){strsplit(x,"_")[[1]][1]}))
-LIBNEWOSKM_meta <- read.table("~/Documents/LIBNEWOSKM_metadata.txt", header = T, sep = "\t")
-LIBNEWOSKM_meta <- LIBNEWOSKM_meta[,1:3]
-LIBNEWOSKM_meta <- LIBNEWOSKM_meta[!is.na(LIBNEWOSKM_meta$Age),]
-LIBNEWOSKM_meta$Sample.ID <- colnames(LIBNEWOSKM)[-1]
-
-LIBNEWOSKM$Geneid <- gsub("\\.[0-9]+","",LIBNEWOSKM$Geneid)
-ensTolen <- getBM(attributes=c("ensembl_gene_id", "transcript_length"), filters = "ensembl_gene_id", values = LIBNEWOSKM$Geneid, mart= ensembl)
-ensTolen_agg <- aggregate(ensTolen$transcript_length,by = list(ensTolen$ensembl_gene_id),FUN = median)
-LIBNEWOSKM <- LIBNEWOSKM[LIBNEWOSKM$Geneid %in% ensTolen_agg$Group.1,]
-ensTolen_agg <- ensTolen_agg[order(ensTolen_agg$Group.1),]
-LIBNEWOSKM <- LIBNEWOSKM[order(LIBNEWOSKM$Geneid),]
-all(LIBNEWOSKM$Geneid == ensTolen_agg$Group.1)
-
-LIBNEWOSKM_meta <- data.frame(SampleID = LIBNEWOSKM_meta$Sample.ID,
-                             GeneID = 0,
-                             Replicate = 1,
-                             Gene = "NTg",
-                             gene_symbol = "NTg",
-                             Line = "Fibro",
-                             Passage = -1,
-                             Line_age = LIBNEWOSKM_meta$Age,
-                             Dox = 0,
-                             LIB = "LIBNEWOSKM",
-                             Comment = ""
-)
-LIBNEWOSKM_meta$Gene[LIBNEWOSKM_meta$SampleID %in% c("A2.CMV.d2EGFP","A2b.CMV.d2EGFP")] <- "GFP"
-LIBNEWOSKM_meta$Gene[LIBNEWOSKM_meta$SampleID %in% c("A2.CMV.hOSK","A2b.CMV.hOSK")] <- "OSKM"
-LIBNEWOSKM_meta$gene_symbol[LIBNEWOSKM_meta$SampleID %in% c("A2.CMV.d2EGFP","A2b.CMV.d2EGFP")] <- "GFP"
-LIBNEWOSKM_meta$gene_symbol[LIBNEWOSKM_meta$SampleID %in% c("A2.CMV.hOSK","A2b.CMV.hOSK")] <- "OSKM"
-
-commonsamps <- intersect(LIBNEWOSKM_meta$Sample,colnames(LIBNEWOSKM))
-LIBNEWOSKM_meta <- LIBNEWOSKM_meta[LIBNEWOSKM_meta$Sample %in% commonsamps,]
-LIBNEWOSKM <- LIBNEWOSKM[,c("Geneid",commonsamps)]
-
-all(LIBNEWOSKM_meta$Sample == colnames(LIBNEWOSKM)[-1])
-
 #LIB058979
 LIB058979 <- read.table("./Data/LIB058979_featurecounts.txt", header = T, sep = "\t")
 LIB058979_meta <- read.table("./Data/LIB058879_MetaData.txt", header = T, sep = "\t")
@@ -1278,16 +1011,16 @@ LIB058979$Geneid <- gsub("\\.[0-9]+","",LIB058979$Geneid)
 lineage_map <- c("M55" = 55, "M79" = 79)
 
 LIB058979_meta <- data.frame(SampleID = LIB058979_meta$UDI,
-                              GeneID = 0,
-                              Replicate = LIB058979_meta$Rep,
-                              Gene = LIB058979_meta$Gene,
-                              gene_symbol = "?",
-                              Line = LIB058979_meta$Line,
-                              Passage = -1,
-                              Line_age = lineage_map[LIB058979_meta$Line],
-                              Dox = 0,
-                              LIB = "LIB058979",
-                              Comment = paste(LIB058979_meta$Sample.ID,LIB058979_meta$ON.OFF,LIB058979_meta$RNA,LIB058979_meta$Batch,sep="\t")
+                             GeneID = 0,
+                             Replicate = LIB058979_meta$Rep,
+                             Gene = LIB058979_meta$Gene,
+                             gene_symbol = "?",
+                             Line = LIB058979_meta$Line,
+                             Passage = -1,
+                             Line_age = lineage_map[LIB058979_meta$Line],
+                             Dox = 0,
+                             LIB = "LIB058979",
+                             Comment = paste(LIB058979_meta$Sample.ID,LIB058979_meta$ON.OFF,LIB058979_meta$RNA,LIB058979_meta$Batch,sep="\t")
 )
 commonsamps <- intersect(LIB058979_meta$Sample,colnames(LIB058979))
 LIB058979_meta <- LIB058979_meta[LIB058979_meta$Sample %in% commonsamps,]
@@ -1304,16 +1037,16 @@ LIB202SC23083511$Geneid <- gsub("\\.[0-9]+","",LIB202SC23083511$Geneid)
 LIB202SC23083511$Length <- NULL
 
 LIB202SC23083511_meta <- data.frame(SampleID = LIB202SC23083511_meta$Sample_ID,
-                             GeneID = 0,
-                             Replicate = LIB202SC23083511_meta$Replicate,
-                             Gene = LIB202SC23083511_meta$Gene,
-                             gene_symbol = "?",
-                             Line = "M55",
-                             Passage = -1,
-                             Line_age = 55,
-                             Dox = 0,
-                             LIB = "LIB202SC23083511",
-                             Comment = paste(LIB202SC23083511_meta$Sample_ID,LIB202SC23083511_meta$Timepoint,LIB202SC23083511_meta$Treatment,sep="\t")
+                                    GeneID = 0,
+                                    Replicate = LIB202SC23083511_meta$Replicate,
+                                    Gene = LIB202SC23083511_meta$Gene,
+                                    gene_symbol = "?",
+                                    Line = "M55",
+                                    Passage = -1,
+                                    Line_age = 55,
+                                    Dox = 0,
+                                    LIB = "LIB202SC23083511",
+                                    Comment = paste(LIB202SC23083511_meta$Sample_ID,LIB202SC23083511_meta$Timepoint,LIB202SC23083511_meta$Treatment,sep="\t")
 )
 LIB202SC23083511_meta$Gene[LIB202SC23083511_meta$Gene == "mTagBFP2"] <- 95
 rownames(LIB202SC23083511_meta) <- LIB202SC23083511_meta$SampleID
@@ -1325,7 +1058,6 @@ all(LIB202SC23083511_meta$SampleID == colnames(LIB202SC23083511)[-1])
 
 #Combine all new data (ASL, SRRs and ERRs)
 meta_comb_new <- rbind.data.frame(fleischer_meta,
-                                  hgps_meta,
                                   ASL_meta,
                                   ERR137716_meta,
                                   ERR260891_meta,
@@ -1338,12 +1070,10 @@ meta_comb_new <- rbind.data.frame(fleischer_meta,
                                   SRR176804_meta,
                                   SRR178756_meta,
                                   SRR180214_meta,
-                                  #SRR203849_meta,
                                   SRR275112_meta,
                                   SRR303074_meta,
                                   SRR315202_meta,
                                   SRR357505_meta,
-                                  #SRR519079_meta,
                                   SRR539844_meta,
                                   SRR627541_meta,
                                   SRR700080_meta,
@@ -1352,7 +1082,6 @@ meta_comb_new <- rbind.data.frame(fleischer_meta,
                                   SRR309684_meta,
                                   SRR122069_meta,
                                   LIB057494_meta,
-                                  #LIBNEWOSKM_meta,
                                   LIB058979_meta,
                                   LIB202SC23083511_meta)
 meta_comb_new$LIBPrep <- "mRNA"
@@ -1365,7 +1094,6 @@ meta_comb_new$CT[meta_comb_new$Line %in% c("EC")] <- "EC"
 meta_comb_new$CT[meta_comb_new$Line %in% c("Skin","Skin_EarlyTime","Skin_LateTime")] <- "Skin"
 
 samples_new_list <- list(Fleischer=fleischer_data,
-                         HGPS=hgps,
                          ASL=ASL_20M,
                          LIBERR137716 = ERR137716,
                          LIBERR260891 = ERR260891,
@@ -1378,12 +1106,10 @@ samples_new_list <- list(Fleischer=fleischer_data,
                          LIBSRR176804 = SRR176804,
                          LIBSRR178756 = SRR178756,
                          LIBSRR180214 = SRR180214,
-                         #SRR203849,
                          LIBSRR275112 = SRR275112,
                          LIBSRR303074 = SRR303074,
                          LIBSRR315202 = SRR315202,
                          LIBSRR357505 = SRR357505,
-                         #SRR519079,
                          LIBSRR539844 = SRR539844,
                          LIBSRR627541 = SRR627541,
                          LIBSRR700080 = SRR700080,
@@ -1392,7 +1118,6 @@ samples_new_list <- list(Fleischer=fleischer_data,
                          LIBSRR309684 = SRR309684,
                          LIBSRR122069 = SRR122069,
                          LIB057494 = LIB057494,
-                         #LIBNEWOSKM = LIBNEWOSKM,
                          LIB058979 = LIB058979,
                          LIB202SC23083511 = LIB202SC23083511)
 samples_new_df <- Reduce(function(x, y) merge(x, y, by = "Geneid"), samples_new_list)
@@ -1415,15 +1140,14 @@ rownames(samples_new_train) <- samples_new_df$Geneid
 all(meta_comb_train$SampleID[which(meta_comb_train$Passage == -1)] %in% names(passageInfo_train_vec))
 meta_comb_train$Passage[which(meta_comb_train$Passage == -1)] <- unname(passageInfo_train_vec[meta_comb_train$SampleID[which(meta_comb_train$Passage == -1)]])
 
-rm(fleischer_data,hgps,ASL_20M,ERR137716,ERR260891,ERR270009,SRR101478,SRR108366,SRR121037,SRR150962,SRR173636,
+rm(fleischer_data,ASL_20M,ERR137716,ERR260891,ERR270009,SRR101478,SRR108366,SRR121037,SRR150962,SRR173636,
    SRR176804,SRR178756,SRR180214,SRR275112,SRR303074,SRR315202,SRR357505,SRR539844,SRR627541,
-   SRR700080,SRR810099,SRR942655,SRR309684,SRR122069,LIB057494,LIB058979,LIB202SC23083511,
-   SRR203849,SRR519079,LIBNEWOSKM)
-rm(fleischer_meta,hgps_meta,ASL_meta, ERR137716_meta, ERR260891_meta, ERR270009_meta, SRR101478_meta, SRR108366_meta,
+   SRR700080,SRR810099,SRR942655,SRR309684,SRR122069,LIB057494,LIB058979,LIB202SC23083511)
+rm(fleischer_meta,ASL_meta, ERR137716_meta, ERR260891_meta, ERR270009_meta, SRR101478_meta, SRR108366_meta,
    SRR121037_meta, SRR150962_meta, SRR173636_meta, SRR176804_meta, SRR178756_meta, SRR180214_meta,
    SRR275112_meta, SRR303074_meta, SRR315202_meta, SRR357505_meta, SRR539844_meta, SRR627541_meta,
    SRR700080_meta, SRR810099_meta, SRR942655_meta, SRR309684_meta, SRR122069_meta, LIB057494_meta,
-   LIB058979_meta, LIB202SC23083511_meta,SRR203849_meta,SRR519079_meta,LIBNEWOSKM_meta)
+   LIB058979_meta, LIB202SC23083511_meta)
 
 meta_comb_apply <- meta_comb_new[which(!(meta_comb_new$SampleID %in% meta_comb_train$SampleID)),]
 samples_new_apply <- samples_new_df[,meta_comb_apply$SampleID]
@@ -1434,10 +1158,9 @@ meta_comb_train <- meta_comb_new[which((meta_comb_new$Gene %in% c("NTg","mTagBFP
 
 samples_new_train <- samples_new_df[,meta_comb_train$SampleID]
 
-saveRDS(samples_new_train,"../TrainingData_raw.rds")
-saveRDS(samples_new_df,"../AllSamples_raw.rds")
-saveRDS(meta_comb_new,"../AllSamples_meta.rds")
-saveRDS(meta_comb_train,"../TrainingData_meta.rds")
-
-
-
+saveRDS(samples_new_train,"./TrainingData_raw.rds")
+saveRDS(samples_new_df,"./AllSamples_raw.rds")
+saveRDS(meta_comb_new,"./AllSamples_meta.rds")
+saveRDS(meta_comb_train,"./TrainingData_meta.rds")
+saveRDS(samples_new_apply,"./ApplicationData_raw.rds")
+saveRDS(meta_comb_apply,"./ApplicationData_meta.rds")

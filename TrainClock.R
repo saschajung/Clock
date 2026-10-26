@@ -3,14 +3,14 @@ library(sva)
 library(psych)
 library(h2o)
 library(plotly)
-library(biomaRt)
 
 setwd("./")
 
-samples_new_train <- readRDS("../TrainingData_raw.rds")
-samples_new_df <- readRDS("../AllSamples_raw.rds")
-meta_comb_new <- readRDS("../AllSamples_meta.rds")
-meta_comb_train <- readRDS("../TrainingData_meta.rds")
+samples_new_train <- readRDS("./TrainingData_raw.rds")
+samples_new_df <- readRDS("./AllSamples_raw.rds")
+meta_comb_new <- readRDS("./AllSamples_meta.rds")
+meta_comb_train <- readRDS("./TrainingData_meta.rds")
+gl <- readRDS("./GeneLengths.rds")
 rownames(samples_new_train) <- samples_new_df$Geneid
 
 horvath_transform <- function(age) {
@@ -27,8 +27,8 @@ horvath_inverse_transform <- function(transformed_age) {
 
 computeTPM <- function(counts, lengths) {
   
-  rpk <- counts / (lengths / 1e3)         # reads per kilobase
-  tpm <- rpk / sum(rpk) * 1e6             # scale to 1 million
+  rpk <- counts / (1.0*lengths / 1e3)         # reads per kilobase
+  tpm <- rpk / sum(1.0*rpk) * 1e6             # scale to 1 million
   return(tpm)
 }
 
@@ -76,7 +76,7 @@ create_age_weights <- function(
 
 weights_new <- create_age_weights(meta_comb_train$Line_age,nbins = 10,method = "target_uniform",binning = "equal_width")
 weights_new <- round(weights_new*10)
-plot_ly(x = meta_comb_train$Line_age,y = weights_new)
+#plot_ly(x = meta_comb_train$Line_age,y = weights_new)
 
 genesToFilter_df <- read.table("./genes_to_filter.txt",header = T, sep = "\t")
 genesToKeep <- setdiff(rownames(samples_new_train),genesToFilter_df$ensembl_id)
@@ -87,7 +87,7 @@ samples_new_train <- apply(samples_new_train, 2, computeTPM, lengths = unname(gl
 samples_new_train <- log(samples_new_train+1)
 samples_new_train[1:5,1:5]
 
-saveRDS(rownames(samples_new_train),"../GenesForTPMNorm.rds")
+saveRDS(rownames(samples_new_train),"./GenesForTPMNorm.rds")
 
 rmeans <- rowMeans(samples_new_train)
 samples_new_train <- samples_new_train[which(rmeans >= 0.5),]
@@ -140,8 +140,7 @@ mbotc <- read.table("./Data/gene-SCPassociations.txt", header = T, sep = "\t", s
 all_procs <- setdiff(unique(mbotc$ProcessName),"Background genes")
 genes_to_procs <- lapply(all_procs,function(x){unique(mbotc$Symbol[mbotc$ProcessName == x])})
 names(genes_to_procs) <- all_procs
-ensembl<-  useMart("ensembl", dataset="hsapiens_gene_ensembl")
-symbToEns <- getBM(attributes=c("ensembl_gene_id", "hgnc_symbol"), filters = "hgnc_symbol", values = unique(mbotc$Symbol), mart= ensembl)
+symbToEns <- readRDS("./EnsemblIdToSymbol_Sep2025.rds")
 ensembl_to_procs <- lapply(genes_to_procs,function(x){unique(symbToEns$ensembl_gene_id[symbToEns$hgnc_symbol %in% x])})
 ensembl_to_procs <- lapply(ensembl_to_procs,function(x){intersect(colnames(inp_sva_train),x)})
 ensembl_to_procs <- ensembl_to_procs[unname(which(sapply(ensembl_to_procs,length) >= 3))]
@@ -152,6 +151,9 @@ require(h2o)
 conn <- h2o.init(max_mem_size="12G",nthreads = 4)
 
 genesToConsider <- unique(do.call("c",ensembl_to_procs[priorProcs]))
+
+inp_sva_train_h2o <- as.h2o(inp_sva_train[trainSamples,])
+inp_sva_test_h2o <- as.h2o(inp_sva_train[testSamples,])
 
 model <- h2o.glm(y = "Age",
                  x = c(genesToConsider,"LibType"),
@@ -172,7 +174,7 @@ model <- h2o.glm(y = "Age",
 
 h2o.saveModel(model, path = "./")
 
-background_df <- data.frame(Genes = colnames(inp_sva_train_h2o)[-c(1:3)],stringsAsFactors = F)
-write.table(background_df,file = "./BackgroundGenes.txt",sep = "\t",quote = F, col.names = T, row.names = F)
 save(trainSamples,testSamples,file = "./TrainTestSamples.RData")
+
+h2o.shutdown(F)
 

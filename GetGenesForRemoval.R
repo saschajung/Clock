@@ -1,15 +1,14 @@
-
-setwd("./Paper_Code/")
-
 suppressPackageStartupMessages({
   library(biomaRt)
   library(dplyr)
   library(readr)
 })
 
-# Parameters (change if needed)
-species_dataset <- "hsapiens_gene_ensembl"  
-ensembl_host <- "https://rest.ensembl.org"
+setwd("./")
+
+# Parameters
+species_dataset <- "hsapiens_gene_ensembl"
+ensembl_host <- "https://sep2025.archive.ensembl.org"
 min_length_to_filter <- 500
 output_file <- "genes_to_filter.txt"
 
@@ -26,20 +25,20 @@ unwanted_biotypes <- c(
 
 ensembl <- NULL
 try({
-  ensembl <- useEnsembl(biomart = "genes", dataset = species_dataset)
+  ensembl <- useEnsembl(biomart = "genes", dataset = species_dataset,host = "https://sep2025.archive.ensembl.org/")
 }, silent = TRUE)
 if (is.null(ensembl)) {
-  ensembl <- useMart("ensembl", dataset = species_dataset)
+  ensembl <- useMart("ensembl", dataset = species_dataset,host="https://sep2025.archive.ensembl.org/")
 }
 
 # Attributes to retrieve
 attrs <- c("ensembl_gene_id", "external_gene_name", "gene_biotype", "start_position", "end_position", "percentage_gene_gc_content")
-genes <- getBM(attributes = attrs, mart = ensembl)
+genes <- getBM(attributes = attrs, mart = ensembl,useCache = F)
 
 # Compute gene length
 genes <- genes %>%
   mutate(gene_length = abs(end_position - start_position) + 1) %>%
-  rename(ensembl_id = ensembl_gene_id, symbol = external_gene_name, biotype = gene_biotype)
+  dplyr::rename(ensembl_id = ensembl_gene_id, symbol = external_gene_name, biotype = gene_biotype)
 
 # Some genes may lack symbol; keep them but with NA symbol
 # Build filter condition
