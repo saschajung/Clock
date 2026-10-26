@@ -1,3 +1,6 @@
+# Transcriptional Aging Predictor
+This repository stores the scripts used for building the transcriptional aging predictor used in Plesa AM et al. Transcriptomic reprogramming screen identifies SRSF1 as a regulator of aging. Nature Aging. 2026. The paper can be read here: https://rdcu.be/AzbXBE4JzJ6a
+
 # Reproducibility Information
 
 ## R and package versions
