@@ -1,6 +1,15 @@
 # Transcriptional Aging Predictor
 This repository stores the scripts used for building the transcriptional aging predictor used in Plesa AM et al. Transcriptomic reprogramming screen identifies SRSF1 as a regulator of aging. Nature Aging. 2026. The paper can be read here: https://rdcu.be/AzbXBE4JzJ6a
 
+## Scripts in this repository
+The following scripts are contained in this repository and should be run in the listed order:
+
+1. GetGenesForRemoval.R : OBSOLETE. Get genes that should be a priori excluded before performing TPM normalization of the data due to different library preparation strategies (mRNA vs total RNA). Writes a file "genes_to_filter.txt", which is already included in this repository.
+2. ProcessFibroblastData.R : Ingest all datasets and arrange them in a common dataframe. Writes out training data, application data and the combined dataset as well as the corresponding metadata.
+3. SelectProcesses.R : Performs process selection and stores them in a workspace object called "priorProcs".
+4. TrainClock.R : Performs training of the final transcriptional aging predictor using the processes selected by the previous script. Writes out the GLM model object that can be read in by h2o. NOTE: The model output gets a generic name of the form 'GLM_model_R_[0-9]+_1'.
+5. ApplyNewData.R : Applies the transcriptional aging predictor estimated in the previous script to all datasets ingested by script 2. IMPORTANT: The line of the script that reads in the model needs to be adapted to the filename of the transcriptional aging predictor saved by the previous script.
+
 # Reproducibility Information
 
 ## R and package versions
